@@ -1,0 +1,39 @@
+[
+  {
+    "type": "open",
+    "name": "xStation",
+    "url": "https://xstation.xtb.com"
+  },
+  {
+    "type": "go_to",
+    "name": "Moje Transakcje",
+    "name_i18n": {
+      "en": "My Trades"
+    }
+  },
+  {
+    "type": "select",
+    "name": "Historia Konta",
+    "name_i18n": {
+      "en": "Account History"
+    }
+  },
+  {
+    "type": "click",
+    "name": "Eksport",
+    "name_i18n": {
+      "en": "Export"
+    }
+  },
+  {
+    "type": "select",
+    "name": "Excel (.xlsx)"
+  },
+  {
+    "type": "click",
+    "name": "Eksportuj raport",
+    "name_i18n": {
+      "en": "Export report"
+    }
+  }
+]
