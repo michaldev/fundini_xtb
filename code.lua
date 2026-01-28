@@ -41,6 +41,7 @@ function run(ctx)
   end
 
   local transactions = {}
+  local pending_profit = {}
 
   for i = header_row + 1, #rows do
     local r = rows[i]
@@ -52,6 +53,11 @@ function run(ctx)
     local amount = parse_number(r[7])
 
     if not typ or not time or not comment or not symbol or not amount then
+      goto continue
+    end
+
+    if typ == "close trade" and comment:match("^Profit of position") then
+      pending_profit[symbol] = (pending_profit[symbol] or 0) + amount
       goto continue
     end
 
@@ -68,7 +74,6 @@ function run(ctx)
           trade_datetime = time,
           side = "buy",
           units = units,
-
           instrument_currency = nil,
           price_instrument = price,
           fx_rate = price_portfolio / price,
@@ -76,9 +81,7 @@ function run(ctx)
           total_portfolio = math.abs(amount),
           fee_portfolio = 0,
           tax_portfolio = 0,
-
           note = "XTB cash operation open",
-
           import_name = symbol
         })
       end
@@ -90,23 +93,25 @@ function run(ctx)
       price = tonumber(price)
 
       if units and price then
-        local price_portfolio = math.abs(amount) / units
+        local profit = pending_profit[symbol] or 0
+        pending_profit[symbol] = nil
+
+        local gross = math.abs(amount) + profit
+        local price_portfolio = gross / units
+
         table.insert(transactions, {
           ticker = "",
           trade_datetime = time,
           side = "sell",
           units = units,
-
           instrument_currency = nil,
           price_instrument = price,
           fx_rate = price_portfolio / price,
           price_portfolio = price_portfolio,
-          total_portfolio = math.abs(amount),
+          total_portfolio = gross,
           fee_portfolio = 0,
           tax_portfolio = 0,
-
-          note = "XTB cash operation close",
-
+          note = profit ~= 0 and "XTB cash operation close (profit included)" or "XTB cash operation close",
           import_name = symbol
         })
       end
