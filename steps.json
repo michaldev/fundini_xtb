@@ -6,21 +6,28 @@
   },
   {
     "type": "go_to",
-    "name": "Moje Transakcje",
+    "name": "Raporty",
     "name_i18n": {
-      "en": "My Trades"
+      "en": "Reports"
     }
   },
   {
-    "type": "select",
+    "type": "click",
     "name": "Historia Konta",
     "name_i18n": {
       "en": "Account History"
     }
   },
   {
+    "type": "select",
+    "name": "Operacje gotówkowe",
+    "name_i18n": {
+      "en": "Cash Operations"
+    }
+  },
+  {
     "type": "click",
-    "name": "Eksport",
+    "name": "Eksportuj",
     "name_i18n": {
       "en": "Export"
     }
@@ -28,12 +35,5 @@
   {
     "type": "select",
     "name": "Excel (.xlsx)"
-  },
-  {
-    "type": "click",
-    "name": "Eksportuj raport",
-    "name_i18n": {
-      "en": "Export report"
-    }
   }
 ]

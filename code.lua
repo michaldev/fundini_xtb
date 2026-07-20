@@ -5,121 +5,209 @@ local function parse_number(v)
   return tonumber(s)
 end
 
-local function parse_datetime(v)
-  if v == nil then return nil end
-  local s = tostring(v):gsub("^%s+", ""):gsub("%s+$", "")
-  local d, m, y, hh, mm, ss =
-    s:match("(%d%d)/(%d%d)/(%d%d%d%d)%s+(%d%d):(%d%d):(%d%d)")
-  if d then
-    return string.format("%s-%s-%sT%s:%s:%sZ", y, m, d, hh, mm, ss)
-  end
-  return nil
+local function trim(s)
+  if s == nil then return nil end
+  return tostring(s):match("^%s*(.-)%s*$")
 end
 
 function run(ctx)
-  ctx.log("XTB CASH OPERATION HISTORY importer start")
+  ctx.log("XTB Cash Operations importer start")
 
-  local sheet = ctx.api.parse_xlsx("CASH OPERATION HISTORY")
+  local sheet = ctx.api.parse_xlsx()
   if not sheet or not sheet.rows then
     return { transactions = {} }
   end
 
   local rows = sheet.rows
-  local header_row = 11
 
-  local header = rows[header_row]
-  if not header
-    or header[2] ~= "ID"
-    or header[3] ~= "Type"
-    or header[4] ~= "Time"
-    or header[5] ~= "Comment"
-    or header[6] ~= "Symbol"
-    or header[7] ~= "Amount"
-  then
-    ctx.log("Header mismatch at B11")
+  local header_row = nil
+  for i = 1, math.min(20, #rows) do
+    local r = rows[i]
+    if r and trim(r[1]) == "Type" and trim(r[2]) == "Ticker" then
+      header_row = i
+      break
+    end
+  end
+
+  if not header_row then
+    ctx.log("Header row not found")
     return { transactions = {} }
   end
 
   local transactions = {}
-  local pending_profit = {}
+  local cash_operations = {}
 
   for i = header_row + 1, #rows do
     local r = rows[i]
 
-    local typ = r[3]
-    local time = parse_datetime(r[4])
-    local comment = r[5]
-    local symbol = r[6]
-    local amount = parse_number(r[7])
+    local typ = trim(r[1])
+    local ticker = trim(r[2])
+    local time_serial = r[4]
+    local amount = parse_number(r[5])
+    local comment = r[7]
+    local product = trim(r[8])
 
-    if not typ or not time or not comment or not symbol or not amount then
+    if typ == nil or typ == "" or typ == "Total" then
+      goto continue
+    end
+    if amount == nil then
       goto continue
     end
 
-    if typ == "close trade" and comment:match("^Profit of position") then
-      pending_profit[symbol] = (pending_profit[symbol] or 0) + amount
+    local time_iso, err = ctx.api.parse_excel_date(time_serial)
+    if not time_iso then
+      ctx.log("cannot parse date: " .. tostring(err))
       goto continue
+    end
+
+    local ticker_ptr = nil
+    if ticker and ticker ~= "" then
+      ticker_ptr = ticker
     end
 
     if typ == "Stock purchase" then
-      local units, price =
-        comment:match("OPEN BUY ([%d%.]+)/?[%d%.]* @ ([%d%.]+)")
+      local units, price
+      if comment then
+        units, price = comment:match("OPEN BUY ([%d%.]+) @ ([%d%.]+)")
+      end
       units = tonumber(units)
       price = tonumber(price)
 
-      if units and price then
-        local price_portfolio = math.abs(amount) / units
+      if units and price and amount < 0 then
+        local total_portfolio = math.abs(amount)
+        local price_portfolio = total_portfolio / units
         table.insert(transactions, {
-          ticker = "",
-          trade_datetime = time,
+          ticker = ticker,
+          trade_datetime = time_iso,
           side = "buy",
           units = units,
           instrument_currency = nil,
           price_instrument = price,
           fx_rate = price_portfolio / price,
           price_portfolio = price_portfolio,
-          total_portfolio = math.abs(amount),
+          total_portfolio = total_portfolio,
           fee_portfolio = 0,
           tax_portfolio = 0,
-          note = "XTB cash operation open",
-          import_name = symbol
+          note = "XTB cash operation",
+          import_name = ticker,
         })
       end
 
-    elseif typ == "Stock sale" then
-      local units, price =
-        comment:match("CLOSE BUY ([%d%.]+)/?[%d%.]* @ ([%d%.]+)")
+    elseif typ == "Stock sell" then
+      local units, price
+      if comment then
+        units, price = comment:match("CLOSE BUY ([%d%.]+) @ ([%d%.]+)")
+      end
       units = tonumber(units)
       price = tonumber(price)
 
-      if units and price then
-        local profit = pending_profit[symbol] or 0
-        pending_profit[symbol] = nil
-
-        local gross = math.abs(amount) + profit
-        local price_portfolio = gross / units
-
+      if units and price and amount > 0 then
+        local total_portfolio = amount
+        local price_portfolio = total_portfolio / units
         table.insert(transactions, {
-          ticker = "",
-          trade_datetime = time,
+          ticker = ticker,
+          trade_datetime = time_iso,
           side = "sell",
           units = units,
           instrument_currency = nil,
           price_instrument = price,
           fx_rate = price_portfolio / price,
           price_portfolio = price_portfolio,
-          total_portfolio = gross,
+          total_portfolio = total_portfolio,
           fee_portfolio = 0,
           tax_portfolio = 0,
-          note = profit ~= 0 and "XTB cash operation close (profit included)" or "XTB cash operation close",
-          import_name = symbol
+          note = "XTB cash operation",
+          import_name = ticker,
         })
       end
+
+    elseif typ == "IKE deposit"
+        or typ == "IKE cash transfer in"
+        or typ == "IKZE deposit"
+        or typ == "Deposit"
+        or typ == "Cash transfer in"
+    then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "deposit",
+        amount_portfolio = amount,
+        ticker = nil,
+        note = comment,
+        import_name = product,
+      })
+
+    elseif typ == "Withdrawal"
+        or typ == "IKE cash transfer out"
+        or typ == "IKZE withdrawal"
+        or typ == "Cash transfer out"
+    then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "withdrawal",
+        amount_portfolio = amount,
+        ticker = nil,
+        note = comment,
+        import_name = product,
+      })
+
+    elseif typ == "Dividend" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "dividend",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+      })
+
+    elseif typ == "Withholding tax" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "tax",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+      })
+
+    elseif typ == "SEC fee" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "fee",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+      })
+
+    elseif typ == "Free funds interest" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "interest",
+        amount_portfolio = amount,
+        ticker = nil,
+        note = comment,
+        import_name = product,
+      })
+
+    elseif typ == "Correction" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "adjustment",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+      })
     end
 
     ::continue::
   end
 
   ctx.log("Transactions created: " .. tostring(#transactions))
-  return { transactions = transactions }
+  ctx.log("Cash operations created: " .. tostring(#cash_operations))
+  return {
+    transactions = transactions,
+    cash_operations = cash_operations,
+  }
 end
