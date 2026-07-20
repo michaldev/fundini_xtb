@@ -46,6 +46,7 @@ function run(ctx)
     local amount = parse_number(r[5])
     local comment = r[7]
     local product = trim(r[8])
+    local op_id = trim(r[6])
 
     if typ == nil or typ == "" or typ == "Total" then
       goto continue
@@ -138,6 +139,7 @@ function run(ctx)
         ticker = nil,
         note = comment,
         import_name = product,
+        external_id = op_id,
       })
 
     elseif typ == "Withdrawal"
@@ -152,6 +154,7 @@ function run(ctx)
         ticker = nil,
         note = comment,
         import_name = product,
+        external_id = op_id,
       })
 
     elseif typ == "Dividend" then
@@ -162,6 +165,7 @@ function run(ctx)
         ticker = ticker_ptr,
         note = comment,
         import_name = product,
+        external_id = op_id,
       })
 
     elseif typ == "Withholding tax" then
@@ -172,6 +176,7 @@ function run(ctx)
         ticker = ticker_ptr,
         note = comment,
         import_name = product,
+        external_id = op_id,
       })
 
     elseif typ == "SEC fee" then
@@ -182,6 +187,7 @@ function run(ctx)
         ticker = ticker_ptr,
         note = comment,
         import_name = product,
+        external_id = op_id,
       })
 
     elseif typ == "Free funds interest" then
@@ -192,6 +198,7 @@ function run(ctx)
         ticker = nil,
         note = comment,
         import_name = product,
+        external_id = op_id,
       })
 
     elseif typ == "Correction" then
@@ -202,6 +209,7 @@ function run(ctx)
         ticker = ticker_ptr,
         note = comment,
         import_name = product,
+        external_id = op_id,
       })
     end
 
