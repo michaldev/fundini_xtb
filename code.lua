@@ -68,7 +68,9 @@ function run(ctx)
     if typ == "Stock purchase" then
       local units, price
       if comment then
-        units, price = comment:match("OPEN BUY ([%d%.]+) @ ([%d%.]+)")
+        -- XTB partial fills use "OPEN BUY <units>/<order_total> @ <price>";
+        -- capture the per-fill units (numerator), ignoring the optional "/total".
+        units, price = comment:match("OPEN BUY ([%d%.]+)/?[%d%.]* @ ([%d%.]+)")
       end
       units = tonumber(units)
       price = tonumber(price)
@@ -96,7 +98,9 @@ function run(ctx)
     elseif typ == "Stock sell" then
       local units, price
       if comment then
-        units, price = comment:match("CLOSE BUY ([%d%.]+) @ ([%d%.]+)")
+        -- XTB partial fills use "CLOSE BUY <units>/<order_total> @ <price>";
+        -- capture the per-fill units (numerator), ignoring the optional "/total".
+        units, price = comment:match("CLOSE BUY ([%d%.]+)/?[%d%.]* @ ([%d%.]+)")
       end
       units = tonumber(units)
       price = tonumber(price)
