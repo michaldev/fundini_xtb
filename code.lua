@@ -211,6 +211,72 @@ function run(ctx)
         import_name = product,
         external_id = op_id,
       })
+
+    elseif typ == "Close trade" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "adjustment",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+        external_id = op_id,
+      })
+
+    elseif typ == "Fractional shares" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "adjustment",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+        external_id = op_id,
+      })
+
+    elseif typ == "Swap" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "fee",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+        external_id = op_id,
+      })
+
+    elseif typ == "Commission" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "fee",
+        amount_portfolio = amount,
+        ticker = ticker_ptr,
+        note = comment,
+        import_name = product,
+        external_id = op_id,
+      })
+
+    elseif typ == "Free funds interest tax" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "tax",
+        amount_portfolio = amount,
+        ticker = nil,
+        note = comment,
+        import_name = product,
+        external_id = op_id,
+      })
+
+    elseif typ == "Transfer" then
+      table.insert(cash_operations, {
+        date = time_iso,
+        type = "transfer",
+        amount_portfolio = amount,
+        ticker = nil,
+        note = comment,
+        import_name = product,
+        external_id = op_id,
+      })
     end
 
     ::continue::
