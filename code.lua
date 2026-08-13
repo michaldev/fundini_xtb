@@ -13,19 +13,36 @@ end
 function run(ctx)
   ctx.log("XTB Cash Operations importer start")
 
-  local sheet = ctx.api.parse_xlsx()
+  local sheet, sheet_err = ctx.api.parse_xlsx("Cash Operations")
   if not sheet or not sheet.rows then
+    ctx.log("cannot parse xlsx: " .. tostring(sheet_err))
     return { transactions = {} }
   end
 
   local rows = sheet.rows
+  ctx.log("sheet: " .. tostring(sheet.sheet) .. ", rows: " .. tostring(sheet.row_count))
 
   local header_row = nil
+  local cols = nil
+
   for i = 1, math.min(20, #rows) do
     local r = rows[i]
-    if r and trim(r[1]) == "Type" and trim(r[2]) == "Ticker" then
-      header_row = i
-      break
+    if r then
+      local map = {}
+      for j = 1, #r do
+        local key = trim(r[j])
+        if key and key ~= "" then
+          key = key:lower()
+          if map[key] == nil then
+            map[key] = j
+          end
+        end
+      end
+      if map["type"] and map["time"] and map["amount"] then
+        header_row = i
+        cols = map
+        break
+      end
     end
   end
 
@@ -34,30 +51,48 @@ function run(ctx)
     return { transactions = {} }
   end
 
+  ctx.log("header row: " .. tostring(header_row)
+    .. ", type=" .. tostring(cols["type"])
+    .. ", ticker=" .. tostring(cols["ticker"])
+    .. ", time=" .. tostring(cols["time"])
+    .. ", amount=" .. tostring(cols["amount"])
+    .. ", id=" .. tostring(cols["id"])
+    .. ", comment=" .. tostring(cols["comment"])
+    .. ", product=" .. tostring(cols["product"]))
+
+  local function cell(r, name)
+    local idx = cols[name]
+    if idx == nil then return nil end
+    return r[idx]
+  end
+
   local transactions = {}
   local cash_operations = {}
+  local skipped = 0
 
   for i = header_row + 1, #rows do
     local r = rows[i]
 
-    local typ = trim(r[1])
-    local ticker = trim(r[2])
-    local time_serial = r[4]
-    local amount = parse_number(r[5])
-    local comment = r[7]
-    local product = trim(r[8])
-    local op_id = trim(r[6])
+    local typ = trim(cell(r, "type"))
+    local ticker = trim(cell(r, "ticker"))
+    local time_serial = cell(r, "time")
+    local amount = parse_number(cell(r, "amount"))
+    local comment = cell(r, "comment")
+    local product = trim(cell(r, "product"))
+    local op_id = trim(cell(r, "id"))
 
     if typ == nil or typ == "" or typ == "Total" then
       goto continue
     end
     if amount == nil then
+      skipped = skipped + 1
       goto continue
     end
 
     local time_iso, err = ctx.api.parse_excel_date(time_serial)
     if not time_iso then
       ctx.log("cannot parse date: " .. tostring(err))
+      skipped = skipped + 1
       goto continue
     end
 
@@ -76,7 +111,7 @@ function run(ctx)
       units = tonumber(units)
       price = tonumber(price)
 
-      if units and price and amount < 0 then
+      if units and price and units > 0 and price > 0 and amount < 0 then
         local total_portfolio = math.abs(amount)
         local price_portfolio = total_portfolio / units
         table.insert(transactions, {
@@ -94,6 +129,8 @@ function run(ctx)
           note = "XTB cash operation",
           import_name = ticker,
         })
+      else
+        skipped = skipped + 1
       end
 
     elseif typ == "Stock sell" then
@@ -106,7 +143,7 @@ function run(ctx)
       units = tonumber(units)
       price = tonumber(price)
 
-      if units and price and amount > 0 then
+      if units and price and units > 0 and price > 0 and amount > 0 then
         local total_portfolio = amount
         local price_portfolio = total_portfolio / units
         table.insert(transactions, {
@@ -124,6 +161,8 @@ function run(ctx)
           note = "XTB cash operation",
           import_name = ticker,
         })
+      else
+        skipped = skipped + 1
       end
 
     elseif typ == "IKE deposit"
@@ -131,25 +170,21 @@ function run(ctx)
         or typ == "IKZE deposit"
         or typ == "Deposit"
         or typ == "Cash transfer in"
-    then
-      table.insert(cash_operations, {
-        date = time_iso,
-        type = "deposit",
-        amount_portfolio = amount,
-        ticker = nil,
-        note = comment,
-        import_name = product,
-        external_id = op_id,
-      })
-
-    elseif typ == "Withdrawal"
+        or typ == "Withdrawal"
         or typ == "IKE cash transfer out"
         or typ == "IKZE withdrawal"
         or typ == "Cash transfer out"
     then
+      -- XTB names both legs of an internal transfer after the receiving account
+      -- (e.g. "IKE deposit" appears with a negative amount on the source account),
+      -- so the direction comes from the sign, not from the label.
+      local kind = "deposit"
+      if amount < 0 then
+        kind = "withdrawal"
+      end
       table.insert(cash_operations, {
         date = time_iso,
-        type = "withdrawal",
+        type = kind,
         amount_portfolio = amount,
         ticker = nil,
         note = comment,
@@ -277,6 +312,10 @@ function run(ctx)
         import_name = product,
         external_id = op_id,
       })
+
+    else
+      skipped = skipped + 1
+      ctx.log("unhandled type: " .. typ)
     end
 
     ::continue::
@@ -284,6 +323,7 @@ function run(ctx)
 
   ctx.log("Transactions created: " .. tostring(#transactions))
   ctx.log("Cash operations created: " .. tostring(#cash_operations))
+  ctx.log("Rows skipped: " .. tostring(skipped))
   return {
     transactions = transactions,
     cash_operations = cash_operations,
